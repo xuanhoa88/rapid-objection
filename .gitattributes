@@ -1,0 +1,167 @@
+# Set default behavior to automatically normalize line endings
+* text=auto
+
+# Force batch scripts to always use CRLF line endings so that if a repo is accessed
+# in Windows via a file share from Linux, the scripts will work
+*.{cmd,[cC][mM][dD]} text eol=crlf
+*.{bat,[bB][aA][tT]} text eol=crlf
+
+# Force bash scripts to always use LF line endings so that if a repo is accessed
+# in Unix via a file share from Windows, the scripts will work
+*.sh text eol=lf
+
+# Explicitly declare text files you want to always be normalized and converted
+# to native line endings on checkout
+*.js text
+*.json text
+*.md text
+*.yml text
+*.yaml text
+
+# Declare files that will always have CRLF line endings on checkout
+*.sln text eol=crlf
+
+# Denote all files that are truly binary and should not be modified
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.mov binary
+*.mp4 binary
+*.mp3 binary
+*.flv binary
+*.fla binary
+*.swf binary
+*.gz binary
+*.zip binary
+*.7z binary
+*.ttf binary
+*.eot binary
+*.woff binary
+*.woff2 binary
+*.pyc binary
+*.pdf binary
+*.ez binary
+*.bz2 binary
+*.swp binary
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+
+# Archives
+*.7z binary
+*.jar binary
+*.rar binary
+*.zip binary
+*.gz binary
+*.gzip binary
+*.tgz binary
+*.bz2 binary
+*.bzip2 binary
+*.xz binary
+*.lzma binary
+*.cab binary
+
+# Documents
+*.pdf binary
+*.doc binary
+*.docx binary
+*.xls binary
+*.xlsx binary
+*.ppt binary
+*.pptx binary
+
+# Fonts
+*.ttf binary
+*.eot binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+
+# Executables
+*.exe binary
+*.pyc binary
+
+# RC files (like .babelrc or .eslintrc)
+.*rc text
+
+# Ignore files (like .gitignore or .npmignore)
+.*ignore text
+
+# GitHub specific files
+.gitattributes text
+.gitignore text
+.gitkeep text
+
+# NPM specific files
+package.json text
+package-lock.json text linguist-generated=true
+npm-shrinkwrap.json text
+.npmrc text
+.npmignore text
+
+# Yarn specific files
+yarn.lock text linguist-generated=true
+.yarnrc text
+.yarn-integrity text
+
+# Configuration files
+*.config.js text
+*.config.json text
+*.config.yml text
+*.config.yaml text
+
+# Documentation
+*.md text
+*.txt text
+README text
+LICENSE text
+CHANGELOG text
+CONTRIBUTING text
+
+# Source code
+*.js text
+*.mjs text
+*.jsx text
+*.ts text
+*.tsx text
+*.json text
+*.css text
+*.scss text
+*.sass text
+*.less text
+*.html text
+*.htm text
+*.xml text
+*.svg text
+
+# Templates
+*.mustache text
+*.handlebars text
+*.hbs text
+*.ejs text
+
+# Logs
+*.log text
+
+# Environment files
+.env text
+.env.* text
+
+# CI/CD files
+.travis.yml text
+.gitlab-ci.yml text
+appveyor.yml text
+circle.yml text
+.github/ text
+
+# Editor files
+.vscode/ text
+.idea/ text
+*.sublime-project text
+*.sublime-workspace text
+
+# OS generated files
+.DS_Store binary
+Thumbs.db binary

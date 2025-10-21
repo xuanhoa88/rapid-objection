@@ -1,0 +1,92 @@
+{
+  "compilerOptions": {
+    // === Language and Environment ===
+    "target": "ES2021", // Target Node.js 16+ (ES2021 features)
+    "module": "CommonJS", // CommonJS for Node.js compatibility
+    "lib": ["ES2021"], // Use ES2021 standard library
+    "moduleResolution": "node", // Node.js module resolution
+
+    // === Project Structure ===
+    "rootDir": "./src", // Source files root directory
+    "outDir": "./dist", // Output directory for compiled files
+    "baseUrl": "./", // Base directory for module resolution
+    "paths": {
+      "@/*": ["src/*"] // Path mapping for cleaner imports
+    },
+
+    // === Type Checking (Relaxed for JS compatibility) ===
+    "strict": false, // Disable strict type checking
+    "noImplicitAny": false, // Allow implicit any types
+    "noImplicitReturns": false, // Allow functions without return statements
+    "noImplicitThis": false, // Allow implicit this types
+    "noUnusedLocals": false, // Allow unused local variables
+    "noUnusedParameters": false, // Allow unused parameters
+    "exactOptionalPropertyTypes": false, // Relaxed optional property handling
+    "noImplicitOverride": true, // Require explicit override keyword
+    "noPropertyAccessFromIndexSignature": false, // Allow property access from index signatures
+    "noUncheckedIndexedAccess": false, // Allow unchecked indexed access
+    "allowUnusedLabels": false, // Disallow unused labels
+    "allowUnreachableCode": false, // Disallow unreachable code
+
+    // === Module and Import Handling ===
+    "esModuleInterop": true, // Enable ES module interoperability
+    "allowSyntheticDefaultImports": true, // Allow synthetic default imports
+    "forceConsistentCasingInFileNames": true, // Enforce consistent file name casing
+    "resolveJsonModule": true, // Allow importing JSON modules
+    "allowJs": true, // Allow JavaScript files
+    "checkJs": false, // Don't type-check JavaScript files
+    "maxNodeModuleJsDepth": 1, // Limit node_modules JS depth for performance
+
+    // === Decorators Support ===
+    "experimentalDecorators": true, // Enable experimental decorators
+    "emitDecoratorMetadata": true, // Emit decorator metadata
+
+    // === Output Generation (Optimized for production) ===
+    "declaration": true, // Generate .d.ts declaration files
+    "declarationMap": false, // Disable declaration maps (can be overridden with --declarationMap)
+    "sourceMap": false, // Disable source maps (can be overridden with --sourceMap)
+    "removeComments": true, // Remove comments to reduce bundle size
+    "isolatedModules": true, // Ensure each file can be transpiled independently
+    "noEmit": false, // Generate output files
+
+    // === Performance Optimizations ===
+    "incremental": false, // Disable incremental for clean builds (can be overridden)
+    "skipLibCheck": true // Skip type checking of declaration files
+  },
+
+  // === File Inclusion ===
+  "include": [
+    "src/**/*.js", // Include all JavaScript files in src
+    "src/**/*.ts", // Include all TypeScript files in src
+    "src/**/*.json" // Include JSON files for type generation
+  ],
+
+  // === File Exclusion ===
+  "exclude": [
+    "node_modules", // Exclude dependencies
+    "dist", // Exclude build output
+    "__tests__", // Exclude all test directories
+    "**/*.test.ts", // Exclude TypeScript test files
+    "**/*.test.js", // Exclude JavaScript test files
+    "**/*.spec.ts", // Exclude TypeScript spec files
+    "**/*.spec.js", // Exclude JavaScript spec files
+    "**/__mocks__/**", // Exclude mock directories
+    "benchmarks", // Exclude benchmark files
+    "docs", // Exclude documentation
+    "coverage", // Exclude test coverage reports
+    "reports", // Exclude generated reports
+    "*.config.js", // Exclude configuration files
+    "*.config.ts", // Exclude TypeScript config files
+    "jest.config.*", // Exclude Jest configuration
+    "eslint.config.*" // Exclude ESLint configuration
+  ],
+
+  // === Development Tools ===
+  "compileOnSave": false, // Don't auto-compile on file save
+  "ts-node": {
+    "esm": false, // Use CommonJS for ts-node
+    "compilerOptions": {
+      "module": "CommonJS" // Ensure CommonJS for ts-node execution
+    }
+  }
+}

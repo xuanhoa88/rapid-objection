@@ -1,0 +1,8 @@
+[
+  {
+    "key": "cmd+shift+f",
+    "command": "workbench.action.tasks.runTask",
+    "args": "Format with Prettier",
+    "when": "editorTextFocus"
+  }
+]
