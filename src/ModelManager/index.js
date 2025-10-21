@@ -2,7 +2,7 @@
 export { ModelManager } from './ModelManager';
 
 // Enhanced BaseModel class for Objection.js
-export { BaseModel } from './BaseModel';
+export * from './BaseModel';
 
 // Model validation utilities
 export { ModelValidator } from './ModelValidator';

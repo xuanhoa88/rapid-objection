@@ -1752,3 +1752,41 @@ export class BaseModel extends ObjectionModel {
     }
   }
 }
+
+/**
+ * Export the enhanced ObjectionModel as the base model class for the rapid-objection system.
+ * 
+ * This enhanced model extends the standard Objection.js Model with:
+ * - Advanced validation system with detailed error reporting
+ * - Custom field validation with type checking and constraints
+ * - Enhanced error messages with field-specific context
+ * - Integration with ModelManager for seamless model registration
+ * - Support for model inheritance and extension patterns
+ * 
+ * Usage:
+ * ```javascript
+ * import { ObjectionModel } from './BaseModel.js';
+ * 
+ * class UserModel extends ObjectionModel {
+ *   static get tableName() {
+ *     return 'users';
+ *   }
+ * 
+ *   static get jsonSchema() {
+ *     return {
+ *       type: 'object',
+ *       required: ['email'],
+ *       properties: {
+ *         email: { type: 'string', format: 'email' },
+ *         name: { type: 'string', minLength: 1 }
+ *       }
+ *     };
+ *   }
+ * }
+ * ```
+ * 
+ * The ObjectionModel provides enhanced validation that runs automatically
+ * before database operations, ensuring data integrity and providing
+ * detailed error feedback for debugging and user interfaces.
+ */
+export { ObjectionModel };

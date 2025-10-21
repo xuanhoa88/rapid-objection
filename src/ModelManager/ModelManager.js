@@ -110,16 +110,24 @@ export class ModelManager extends EventEmitter {
    * Register a single model with the connection's Knex instance
    * Supports both model definition objects and pre-defined model classes
    *
+   * Model Sharing and Extension:
+   * - By default, models are NOT shared (isShared: false)
+   * - Attempting to register a duplicate non-shared model throws an error
+   * - Set static isShared = true on a model to allow extension by other models
+   * - When a shared model is re-registered, an inherited model is created combining both
+   *
    * @param {string} modelName - Name of the model
    * @param {Object|Function} modelDefinition - Model definition object OR pre-defined model class
    * @param {string} [modelDefinition.tableName] - Database table name (for definition objects)
+   * @param {boolean} [modelDefinition.isShared=false] - Allow this model to be extended (for definition objects)
+
    * @param {Object} [modelDefinition.schema] - Model schema definition (for definition objects)
    * @param {Object} [modelDefinition.relations] - Model relations definition (for definition objects)
    * @param {Object} [modelDefinition.hooks] - Model lifecycle hooks (for definition objects)
    * @param {Object} knexInstance - Knex database connection instance
    * @param {Function} [CustomBaseModel] - Custom BaseModel class to extend from (for definition objects)
-   * @returns {Promise<Function>} The registered model class
-   * @throws {Error} When model registration fails
+   * @returns {Promise<Function>} The registered model class (or inherited model if extending shared model)
+   * @throws {Error} When model registration fails or duplicate non-shared model is registered
    */
   async registerModel(modelName, modelDefinition, knexInstance, CustomBaseModel = null) {
     this.#ensureInitialized();
@@ -145,52 +153,85 @@ export class ModelManager extends EventEmitter {
     const isModelClass = typeof modelDefinition === 'function';
 
     let ModelClass;
-    let tableName;
-    let registrationType;
+    let modelTableName;
+    let modelRegistrationType;
+
+    // Extract configuration and check for existing model registration
+    const existingModelClass = this.#registeredModels.get(modelName);
+    const existingModelIsShared = existingModelClass && this.#isSharedModel(existingModelClass);
 
     if (isModelClass) {
       // Handle pre-defined model class registration
-      registrationType = 'class';
+      modelRegistrationType = 'class';
       ModelClass = modelDefinition;
-      tableName = ModelClass.tableName || 'unknown';
+      modelTableName = ModelClass.tableName;
 
       // Validate model class structure if validation is enabled
       if (this.#config.validateModels) {
         this.#validator.validateModelStructure(modelName, ModelClass);
       }
-    } else {
-      // Handle model definition object registration (existing behavior)
-      registrationType = 'definition';
 
+      // Check if we should create an inherited model instead of replacing
+      if (existingModelIsShared) {
+        modelRegistrationType = 'class-inheritance';
+
+        this.#emitWarning(
+          'register-model',
+          `Model '${modelName}' is shared - creating inherited model`
+        );
+      }
+
+      // Create class-based inheritance by composing existing and new model
+      if (modelRegistrationType === 'class-inheritance') {
+        ModelClass = this.#createInheritedModelClass(modelName, ModelClass, existingModelClass);
+      }
+    } else {
+      // Handle model definition object registration
+      modelRegistrationType = 'definition';
+
+      // Validate model definition structure
       if (typeof modelDefinition !== 'object') {
         throw new Error('Model definition must be an object or a model class function');
       }
 
-      if (!modelDefinition.tableName) {
-        throw new Error('Model definition must include tableName');
-      }
-
-      tableName = modelDefinition.tableName;
+      modelTableName = modelDefinition.tableName;
 
       // Perform comprehensive model validation if enabled
       if (this.#config.validateModels) {
         this.#validator.validateModelDefinition(modelName, modelDefinition);
       }
 
-      // Create dynamic model class from definition using overridden BaseModel
-      ModelClass = this.#createDynamicModelClass(
-        modelName,
-        modelDefinition,
-        CustomBaseModel || COMPONENT_CLASSES.BaseModel
-      );
-    }
+      // Check if we should create an inherited model instead of replacing
+      if (existingModelIsShared) {
+        modelRegistrationType = 'definition-inheritance';
 
-    // Check if model already registered
-    if (this.#registeredModels.has(modelName)) {
-      this.#emitWarning('register-model', `Model '${modelName}' already registered, replacing`);
+        this.#emitWarning(
+          'register-model',
+          `Model '${modelName}' is shared - creating inherited model`
+        );
+      }
+
+      // Determine the appropriate base class for model creation
+      const baseClassForCreation = existingModelIsShared
+        ? existingModelClass // Use existing model as base for inheritance
+        : CustomBaseModel || COMPONENT_CLASSES.BaseModel; // Use default base class
+
+      // Create dynamic model class from definition
+      ModelClass = this.#createDynamicModelClass(modelName, modelDefinition, baseClassForCreation);
     }
 
     try {
+      // Throw error if trying to register duplicate model that is not shared
+      if (
+        existingModelClass &&
+        !['definition-inheritance', 'class-inheritance'].includes(modelRegistrationType)
+      ) {
+        throw new Error(
+          `Cannot register model '${modelName}': A model with this name already exists and is not shared. ` +
+            `Set 'isShared: true' on the existing model to allow extension.`
+        );
+      }
+
       // Store Knex instance for binding
       this.#knexInstance = knexInstance;
 
@@ -199,22 +240,24 @@ export class ModelManager extends EventEmitter {
         ModelClass.knex(knexInstance);
       }
 
-      // Store registered model
+      // Store registered model in the registry
       this.#registeredModels.set(modelName, ModelClass);
       this.#lastModelRegistration = new Date();
 
-      // Emit success event
+      // Emit registration event with comprehensive details
       this.emit('model-registered', {
         modelName,
-        tableName,
+        tableName: modelTableName,
+        registrationType: modelRegistrationType,
         connectionName: this.#connectionName,
         totalModels: this.#registeredModels.size,
         timestamp: new Date(),
-        registrationType, // 'class' or 'definition'
+        modelClass: ModelClass,
       });
 
       return ModelClass;
     } catch (error) {
+      // Handle registration errors gracefully
       this.#emitError(
         'register-model',
         `Failed to register model '${modelName}': ${error.message}`,
@@ -422,32 +465,27 @@ export class ModelManager extends EventEmitter {
    * @private
    */
   #createDynamicModelClass(modelName, modelDefinition, BaseModelClass) {
-    const { tableName, schema = {}, relations = {}, hooks = {} } = modelDefinition;
+    const { tableName, schema = {}, relations = {}, hooks = {}, isShared } = modelDefinition;
     const defaultOptions = mergeConfig({}, this.#config.defaultModelOptions);
 
-    // Create dynamic model class
-    class DynamicModel extends BaseModelClass {
-      static get tableName() {
-        return tableName;
-      }
+    // Prepare static properties for the model class
+    const staticProperties = {
+      tableName: () => tableName,
+      modelName: () => modelName,
+      schema: () => ({ ...defaultOptions, ...schema }),
+      relationMappings: () => relations,
+    };
 
-      static get modelName() {
-        return modelName;
-      }
-
-      static get schema() {
-        return { ...defaultOptions, ...schema };
-      }
-
-      static get relationMappings() {
-        return relations;
-      }
+    // Add isShared property if specified in definition
+    if (typeof isShared === 'boolean') {
+      staticProperties.isShared = () => isShared;
     }
 
-    // Set model name for debugging
-    Object.defineProperty(DynamicModel, 'name', {
-      value: modelName,
-      configurable: true,
+    // Create model class using shared utility
+    const DynamicModel = this.#createModelClass({
+      modelName,
+      staticProperties,
+      baseClass: BaseModelClass,
     });
 
     // Add lifecycle hooks if provided
@@ -456,6 +494,261 @@ export class ModelManager extends EventEmitter {
     }
 
     return DynamicModel;
+  }
+
+  /**
+   * Create an inherited model class that extends functionality from a base model
+   * This implements model inheritance when the existing model has isShared: true
+   * The resulting class combines properties and methods from both models
+   *
+   * @param {string} modelName - The name identifier for the model
+   * @param {Function} newModelClass - The new model class to be extended
+   * @param {Function} existingModelClass - The existing registered model class to inherit from
+   * @returns {Function} The composed inherited model class
+   * @private
+   */
+  #createInheritedModelClass(modelName, newModelClass, existingModelClass) {
+    const modelTableName = newModelClass.tableName || existingModelClass.tableName;
+
+    // Create inherited model class using shared utility with intelligent property merging
+    const InheritedModelClass = this.#createModelClass({
+      modelName,
+      baseClass: existingModelClass,
+      staticProperties: {
+        tableName: () => modelTableName,
+        modelName: () => modelName,
+        jsonSchema: () => this.#mergeJsonSchemas(existingModelClass, newModelClass),
+        relationMappings: () =>
+          this.#mergeObjectProperties(existingModelClass, newModelClass, 'relationMappings'),
+        modifiers: () =>
+          this.#mergeObjectProperties(existingModelClass, newModelClass, 'modifiers'),
+        virtualAttributes: () =>
+          this.#mergeArrayProperties(existingModelClass, newModelClass, 'virtualAttributes'),
+      },
+    });
+
+    // Transfer instance methods from new model to inherited model (allows method overriding)
+    this.#transferInstanceMethods(newModelClass, InheritedModelClass);
+
+    // Transfer static methods from new model to inherited model (with safety checks)
+    this.#transferStaticMethods(newModelClass, InheritedModelClass);
+
+    return InheritedModelClass;
+  }
+
+  /**
+   * Shared utility to create model classes with consistent structure
+   * Eliminates duplication between dynamic and inherited model creation
+   * Uses ES6 class extension with dynamic property injection
+   *
+   * @param {Object} creationOptions - Model class creation configuration
+   * @param {string} creationOptions.modelName - Name of the model
+   * @param {Function} creationOptions.baseClass - Base class to extend from
+   * @param {Object} creationOptions.staticProperties - Static properties to add to the class
+   * @returns {Function} Created model class
+   * @private
+   */
+  #createModelClass({ modelName, baseClass, staticProperties }) {
+    // Create the model class dynamically using ES6 class extension
+    class GeneratedModelClass extends baseClass {}
+
+    // Inject static properties using property descriptors with getters
+    Object.entries(staticProperties).forEach(([propertyName, propertyGetterFunction]) => {
+      Object.defineProperty(GeneratedModelClass, propertyName, {
+        get: propertyGetterFunction,
+        configurable: true,
+        enumerable: true,
+      });
+    });
+
+    // Set descriptive class name
+    Object.defineProperty(GeneratedModelClass, 'name', {
+      value: modelName,
+      configurable: true,
+    });
+
+    return GeneratedModelClass;
+  }
+
+  /**
+   * Safely merge JSON schemas from existing and new models
+   * Combines schema properties at both root and properties level
+   * New model schema properties take precedence over existing ones
+   *
+   * @param {Function} existingModelClass - Existing registered model class
+   * @param {Function} newModelClass - New model class being registered
+   * @returns {Object} Merged JSON schema with combined properties
+   * @private
+   */
+  #mergeJsonSchemas(existingModelClass, newModelClass) {
+    const existingSchema = this.#safelyGetStaticProperty(existingModelClass, 'jsonSchema', {});
+    const newSchema = this.#safelyGetStaticProperty(newModelClass, 'jsonSchema', {});
+
+    return {
+      // Merge root-level schema properties (new overrides existing)
+      ...(existingSchema || {}),
+      ...(newSchema || {}),
+      // Merge properties object specifically (combining field definitions)
+      properties: {
+        ...((existingSchema && existingSchema.properties) || {}),
+        ...((newSchema && newSchema.properties) || {}),
+      },
+    };
+  }
+
+  /**
+   * Safely merge object properties from existing and new models
+   * Generic utility for merging relationMappings, modifiers, etc.
+   * New model properties take precedence over existing ones
+   *
+   * @param {Function} existingModelClass - Existing registered model class
+   * @param {Function} newModelClass - New model class being registered
+   * @param {string} staticPropertyName - Name of the static property to merge
+   * @returns {Object} Merged object properties
+   * @private
+   */
+  #mergeObjectProperties(existingModelClass, newModelClass, staticPropertyName) {
+    const existingProperties = this.#safelyGetStaticProperty(
+      existingModelClass,
+      staticPropertyName,
+      {}
+    );
+    const newProperties = this.#safelyGetStaticProperty(newModelClass, staticPropertyName, {});
+
+    return {
+      // Existing properties as base
+      ...existingProperties,
+      // New properties override existing ones
+      ...newProperties,
+    };
+  }
+
+  /**
+   * Safely merge array properties from existing and new models with deduplication
+   * Combines arrays and removes duplicates using Set for uniqueness
+   * Useful for merging virtualAttributes and similar array-based properties
+   *
+   * @param {Function} existingModelClass - Existing registered model class
+   * @param {Function} newModelClass - New model class being registered
+   * @param {string} staticPropertyName - Name of the static array property to merge
+   * @returns {Array} Merged and deduplicated array
+   * @private
+   */
+  #mergeArrayProperties(existingModelClass, newModelClass, staticPropertyName) {
+    const existingArray = this.#safelyGetStaticProperty(existingModelClass, staticPropertyName, []);
+    const newArray = this.#safelyGetStaticProperty(newModelClass, staticPropertyName, []);
+
+    // Combine arrays and remove duplicates using Set
+    return [...new Set([...existingArray, ...newArray])];
+  }
+
+  /**
+   * Safely access static properties with comprehensive error handling
+   * Prevents crashes from private field access issues or undefined properties
+   * Returns fallback value if property access fails for any reason
+   *
+   * @param {Function} targetModelClass - Model class to access property from
+   * @param {string} staticPropertyName - Name of the static property to access
+   * @param {*} fallbackValue - Default value if property access fails
+   * @returns {*} Property value or fallback value
+   * @private
+   */
+  #safelyGetStaticProperty(targetModelClass, staticPropertyName, fallbackValue) {
+    try {
+      const propertyValue = targetModelClass[staticPropertyName];
+      return propertyValue !== undefined ? propertyValue : fallbackValue;
+    } catch {
+      // Handle private field access issues, getter errors, etc. gracefully
+      return fallbackValue;
+    }
+  }
+
+  /**
+   * Get the isShared flag from a model class to determine if it allows extension
+   * Checks both static property and definition object for the isShared flag
+   *
+   * @param {Function|Object} modelClass - Model class or definition to check
+   * @returns {boolean} True if model is marked as shared, false otherwise
+   * @private
+   */
+  #isSharedModel(modelClass) {
+    try {
+      // For model classes, check static isShared property
+      if (typeof modelClass === 'function') {
+        return this.#safelyGetStaticProperty(modelClass, 'isShared', false);
+      }
+
+      // For definition objects, check isShared property
+      if (typeof modelClass === 'object' && modelClass != null) {
+        return Boolean(modelClass.isShared);
+      }
+
+      return false;
+    } catch {
+      // Default to false if any error occurs
+      return false;
+    }
+  }
+
+  /**
+   * Transfer instance methods from source to target model class
+   * Copies all non-constructor methods, allowing method overriding
+   * Enables new model methods to override existing model methods
+   *
+   * @param {Function} sourceModelClass - Source model class (new model)
+   * @param {Function} targetModelClass - Target model class (inherited model)
+   * @private
+   */
+  #transferInstanceMethods(sourceModelClass, targetModelClass) {
+    const sourcePrototype = sourceModelClass.prototype;
+    const targetPrototype = targetModelClass.prototype;
+
+    // Iterate through all properties on the source prototype
+    Object.getOwnPropertyNames(sourcePrototype).forEach(methodName => {
+      if (methodName !== 'constructor' && typeof sourcePrototype[methodName] === 'function') {
+        // Transfer method to target prototype (enables method overriding)
+        targetPrototype[methodName] = sourcePrototype[methodName];
+      }
+    });
+  }
+
+  /**
+   * Transfer static methods from source to target model class
+   * Copies static methods while excluding core properties handled elsewhere
+   * Provides safe transfer with error handling for problematic methods
+   *
+   * @param {Function} sourceModelClass - Source model class (new model)
+   * @param {Function} targetModelClass - Target model class (inherited model)
+   * @private
+   */
+  #transferStaticMethods(sourceModelClass, targetModelClass) {
+    // Properties to exclude from transfer (handled by other mechanisms)
+    const excludedStaticProperties = new Set([
+      'prototype', // JavaScript built-in
+      'name', // Class name (set separately)
+      'length', // Constructor parameter count
+      'tableName', // Handled by static property merging
+      'modelName', // Handled by static property merging
+      'jsonSchema', // Handled by schema merging
+      'relationMappings', // Handled by object property merging
+      'modifiers', // Handled by object property merging
+      'virtualAttributes', // Handled by array property merging
+    ]);
+
+    // Transfer all non-excluded static methods
+    Object.getOwnPropertyNames(sourceModelClass).forEach(staticPropertyName => {
+      if (
+        !excludedStaticProperties.has(staticPropertyName) &&
+        typeof sourceModelClass[staticPropertyName] === 'function'
+      ) {
+        try {
+          // Transfer static method to target class
+          targetModelClass[staticPropertyName] = sourceModelClass[staticPropertyName];
+        } catch (error) {
+          // Gracefully skip methods that cannot be transferred (e.g., private field access)
+        }
+      }
+    });
   }
 
   /**

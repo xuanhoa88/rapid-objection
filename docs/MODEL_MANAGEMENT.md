@@ -11,6 +11,8 @@ ModelManager that handles models specific to that database connection.
 - [Components](#components)
 - [Basic Usage](#basic-usage)
 - [Advanced Features](#advanced-features)
+  - [Model Sharing and Extension](#model-sharing-and-extension)
+  - [Plugin System](#plugin-system)
 - [API Reference](#api-reference)
 - [Configuration](#configuration)
 - [Examples](#examples)
@@ -577,6 +579,192 @@ const hasUser = connectionManager.hasModel('User');
 ```
 
 ## Advanced Features
+
+### Model Sharing and Extension
+
+The ModelManager provides a secure and flexible model sharing system that allows
+controlled extension of models while protecting against accidental overwrites.
+
+#### Default Behavior: Protected Models
+
+By default, all models are **NOT shared** and are protected from duplication:
+
+```javascript
+class UserModel extends Model {
+  static get tableName() {
+    return 'users';
+  }
+  // No isShared flag = protected from duplication
+}
+
+// First registration succeeds
+await connectionManager.registerModel('User', UserModel);
+
+// Second registration throws error
+await connectionManager.registerModel('User', OtherModel);
+// ❌ Error: Cannot register model 'User': A model with this name already exists and is not shared.
+//    Set 'isShared: true' on the existing model to allow extension.
+```
+
+#### Enabling Model Sharing
+
+To allow a model to be extended, set the `isShared` flag to `true`:
+
+**For Model Classes:**
+
+```javascript
+class SharedUserModel extends Model {
+  static get tableName() {
+    return 'users';
+  }
+
+  static get isShared() {
+    return true; // Allow this model to be extended
+  }
+
+  // Base functionality
+  getName() {
+    return this.name;
+  }
+}
+
+// First registration
+await connectionManager.registerModel('User', SharedUserModel);
+
+// Second registration creates inherited model
+class EnhancedUserModel extends Model {
+  static get tableName() {
+    return 'users';
+  }
+
+  // Additional functionality
+  getFullName() {
+    return `${this.firstName} ${this.lastName}`;
+  }
+}
+
+const InheritedUser = await connectionManager.registerModel(
+  'User',
+  EnhancedUserModel
+);
+// ✅ Creates Inherited:User class with methods from both models
+
+// InheritedUser variable contains the Inherited:User class
+const user = await InheritedUser.query().findById(1);
+console.log(user.getName()); // From SharedUserModel
+console.log(user.getFullName()); // From EnhancedUserModel
+```
+
+**For Definition Objects:**
+
+```javascript
+// Register shared model via definition
+await connectionManager.registerModel('Category', {
+  tableName: 'categories',
+  isShared: true, // Allow extension
+  schema: {
+    name: { type: 'string' },
+    description: { type: 'string' },
+  },
+});
+
+// Extend with additional properties
+await connectionManager.registerModel('Category', {
+  tableName: 'categories',
+  schema: {
+    slug: { type: 'string' },
+    metadata: { type: 'object' },
+  },
+});
+// ✅ Creates inherited model with combined schema
+```
+
+#### Use Cases
+
+**1. Library/Framework Models (Shared)**
+
+Use `isShared: true` for base models that applications should extend:
+
+```javascript
+// In your library/framework
+class BaseUserModel extends Model {
+  static get tableName() {
+    return 'users';
+  }
+  static get isShared() {
+    return true;
+  } // Allow apps to extend
+
+  // Core authentication
+  async authenticate(password) {
+    return bcrypt.compare(password, this.password_hash);
+  }
+}
+```
+
+**2. Application Models (Private)**
+
+Leave `isShared` false (default) for application-specific models:
+
+```javascript
+// In your application
+class CustomerModel extends Model {
+  static get tableName() {
+    return 'customers';
+  }
+  // No isShared - private to this application
+
+  // Application-specific logic
+  calculateLoyaltyPoints() {
+    return this.purchases * 10;
+  }
+}
+```
+
+**3. Plugin Extension**
+
+Plugins can extend shared models:
+
+```javascript
+// Plugin extends shared base model
+class NotificationUserModel extends Model {
+  static get tableName() {
+    return 'users';
+  }
+
+  async sendNotification(message) {
+    // Plugin-specific functionality
+  }
+}
+
+// If BaseUserModel has isShared: true, this creates Inherited:User class
+const ExtendedUser = await connectionManager.registerModel(
+  'User',
+  NotificationUserModel
+);
+// ✅ Has both authenticate() and sendNotification()
+```
+
+#### Security Benefits
+
+1. **✅ Prevents Accidental Overwrites**: Non-shared models throw errors on
+   duplicate registration
+2. **✅ Explicit Sharing**: Models must explicitly allow extension
+3. **✅ Clear Error Messages**: Developers know exactly how to fix issues
+4. **✅ Secure by Default**: Models are protected unless marked as shared
+5. **✅ Granular Control**: Each model controls its own extension policy
+
+#### Model Inheritance Details
+
+When a shared model is extended:
+
+- **Class Name**: Inherited model naming
+- **Methods**: Both base and derived methods are available
+- **Static Properties**: Combined from both models
+- **Schema**: Merged with derived properties overriding base
+- **Relations**: Combined from both models
+- **Modifiers**: Combined from both models
+- **Virtual Attributes**: Combined from both models
 
 ### Plugin System
 
@@ -1441,17 +1629,75 @@ const UserModel = await connectionManager.registerModel('User', {
 
 Register a single Objection.js model with the connection.
 
+**Model Sharing and Extension:**
+
+- By default, models are **NOT shared** (`isShared: false`)
+- Attempting to register a duplicate non-shared model **throws an error**
+- Set `static isShared = true` on a model class (or `isShared: true` in
+  definition) to allow extension
+- When a shared model is re-registered, an inherited model is created combining
+  both
+
 **Parameters:**
 
 - `modelName` (string): Name of the model
-- `modelDefinition` (object): Model definition
+- `modelDefinition` (object|Function): Model definition object OR pre-defined
+  model class
   - `tableName` (string): Database table name
+  - `isShared` (boolean, optional, default: false): Allow this model to be
+    extended
   - `schema` (object, optional): Model schema definition
   - `relations` (object, optional): Model relations definition
   - `hooks` (object, optional): Model lifecycle hooks
 - `CustomBaseModel` (Function, optional): Custom BaseModel class to extend from
 
-**Returns:** Promise<Function> - The registered model class
+**Returns:** Promise<Function> - The registered model class (or inherited model
+if extending shared model)
+
+**Throws:** Error - When model registration fails or duplicate non-shared model
+is registered
+
+**Examples:**
+
+```javascript
+// Non-shared model (default) - protected from duplication
+class UserModel extends Model {
+  static get tableName() {
+    return 'users';
+  }
+}
+await connectionManager.registerModel('User', UserModel);
+await connectionManager.registerModel('User', OtherModel); // ❌ Throws Error!
+
+// Shared model - allows extension
+class SharedUserModel extends Model {
+  static get tableName() {
+    return 'users';
+  }
+  static get isShared() {
+    return true;
+  } // Allow extension
+}
+await connectionManager.registerModel('User', SharedUserModel);
+
+// Extending model
+class ExtendedUserModel extends Model {
+  static get tableName() {
+    return 'users';
+  }
+}
+const extended = await connectionManager.registerModel(
+  'User',
+  ExtendedUserModel
+); // ✅ Creates inherited model
+
+// Definition object with isShared
+await connectionManager.registerModel('Category', {
+  tableName: 'categories',
+  isShared: true, // Allow extension
+  schema: { name: { type: 'string' } },
+});
+```
 
 #### `registerModels(modelDefinitions, CustomBaseModel?)`
 
