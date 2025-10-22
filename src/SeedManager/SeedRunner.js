@@ -87,6 +87,18 @@ export class SeedRunner extends EventEmitter {
   }
 
   /**
+   * Ensure manager is initialized
+   *
+   * @private
+   * @throws {Error} If not initialized
+   */
+  #ensureInitialized() {
+    if (!this.#initialized) {
+      throw new Error('SeedRunner not initialized. Call initialize() first.');
+    }
+  }
+
+  /**
    * Check if this connection is initialized and ready for operations.
    *
    * @returns {boolean} True if connection is initialized, false otherwise
@@ -114,7 +126,7 @@ export class SeedRunner extends EventEmitter {
   }
 
   /**
-   * Ensure knex_seeds table exists for tracking seed execution
+   * Ensure knex_seeds table exists for tracking seed execution with process ownership
    * Uses caching to avoid repeated schema checks
    *
    * @param {Object} knex - Knex instance
@@ -134,7 +146,16 @@ export class SeedRunner extends EventEmitter {
         table.string('name').notNullable();
         table.integer('batch').notNullable();
         table.timestamp('migration_time').defaultTo(knex.fn.now());
+        table.string('app_name').notNullable().defaultTo('default');
       });
+    } else {
+      // Check if app_name column exists, add it if missing (for backward compatibility)
+      const hasAppNameColumn = await knex.schema.hasColumn(this.#config.tableName, 'app_name');
+      if (!hasAppNameColumn) {
+        await knex.schema.alterTable(this.#config.tableName, table => {
+          table.string('app_name').notNullable().defaultTo('default');
+        });
+      }
     }
 
     // Mark table as ensured to avoid future checks
@@ -142,84 +163,123 @@ export class SeedRunner extends EventEmitter {
   }
 
   /**
-   * Get the next batch number for seeds
+   * Get the next batch number for seeds for a specific app
    *
    * @param {Object} knex - Knex instance
+   * @param {string} [appName] - App name for process-specific batching
    * @returns {Promise<number>}
    * @private
    */
-  async #getNextBatch(knex) {
-    const result = await knex(this.#config.tableName).max('batch as maxBatch').first();
+  async #getNextBatch(knex, appName = null) {
+    const query = knex(this.#config.tableName);
+
+    // If appName is provided, get app-specific batch number
+    if (appName) {
+      query.where('app_name', appName);
+    }
+
+    const result = await query.max('batch as maxBatch').first();
     return (result?.maxBatch || 0) + 1;
   }
 
   /**
-   * Get seeds that have already been run
+   * Get seeds that have already been run, optionally filtered by app
    *
    * @param {Object} knex - Knex instance
+   * @param {string} [appName] - App name to filter by
    * @returns {Promise<Array<string>>}
    * @private
    */
-  async #getExecutedSeeds(knex) {
-    const executed = await knex(this.#config.tableName).select('name').orderBy('id');
-    return executed.map(row => row.name);
+  async #getExecutedSeeds(knex, appName = null) {
+    const query = knex(this.#config.tableName).select('name');
+
+    // If appName is provided, filter by app ownership
+    if (appName) {
+      query.where('app_name', appName);
+    }
+
+    const result = await query;
+    return result.map(row => row.name);
   }
 
   /**
-   * Record seed execution in the tracking table
+   * Record seed execution in the database with process ownership
    *
    * @param {Object} knex - Knex instance
    * @param {Array<string>} seedNames - Names of executed seeds
    * @param {number} batch - Batch number
+   * @param {string} [appName] - App name for process ownership tracking
    * @returns {Promise<void>}
    * @private
    */
-  async #recordSeedExecution(knex, seedNames, batch) {
+  async #recordSeedExecution(knex, seedNames, batch, appName = null) {
     if (seedNames.length === 0) return;
 
     const records = seedNames.map(name => ({
       name,
       batch,
       migration_time: new Date(),
+      app_name: appName || this.#connectionName || 'default', // Track process ownership
     }));
     await knex(this.#config.tableName).insert(records);
   }
 
   /**
-   * Get seeds from the last batch for rollback
+   * Get seeds from the last batch for rollback, filtered by app ownership
    *
    * @param {Object} knex - Knex instance
    * @param {number} [steps=1] - Number of batches to rollback
+   * @param {string} [appName] - App name to filter rollback by process ownership
    * @returns {Promise<Array<string>>}
    * @private
    */
-  async #getSeedsToRollback(knex, steps = 1) {
-    const maxBatch = await knex(this.#config.tableName).max('batch as maxBatch').first();
+  async #getSeedsToRollback(knex, steps = 1, appName = null) {
+    let query = knex(this.#config.tableName);
+
+    // Filter by app ownership if provided
+    if (appName) {
+      query.where('app_name', appName);
+    }
+
+    const maxBatch = await query.max('batch as maxBatch').first();
     if (!maxBatch?.maxBatch) {
       return [];
     }
 
-    const targetBatch = Math.max(1, maxBatch.maxBatch - steps + 1);
-    const seeds = await knex(this.#config.tableName)
-      .select('name')
-      .where('batch', '>=', targetBatch)
-      .orderBy('batch', 'desc')
-      .orderBy('id', 'desc');
+    const targetBatch = maxBatch.maxBatch - steps + 1;
 
-    return seeds.map(row => row.name);
+    // Reset query and apply filters again
+    query = knex(this.#config.tableName).select('name').where('batch', '>=', targetBatch);
+
+    // Apply app filter again if provided
+    if (appName) {
+      query.where('app_name', appName);
+    }
+
+    const result = await query.orderBy('batch', 'desc');
+    return result.map(row => row.name);
   }
 
   /**
-   * Remove seed records from tracking table
+   * Remove seed records from tracking table with app-specific filtering
    *
    * @param {Object} knex - Knex instance
    * @param {Array<string>} seedNames - Names of seeds to remove
+   * @param {string} [appName] - App name to filter by for process ownership
    * @returns {Promise<number>} Number of records removed
    * @private
    */
-  async #removeSeedRecords(knex, seedNames) {
+  async #removeSeedRecords(knex, seedNames, appName = null) {
     if (seedNames.length === 0) return 0;
-    return await knex(this.#config.tableName).whereIn('name', seedNames).del();
+
+    const query = knex(this.#config.tableName).whereIn('name', seedNames);
+
+    // Filter by app ownership if provided
+    if (appName) {
+      query.where('app_name', appName);
+    }
+
+    return await query.del();
   }
 
   /**
@@ -241,21 +301,20 @@ export class SeedRunner extends EventEmitter {
   }
 
   /**
-   * Run seeds for this connection.
+   * Run seeds for this connection with process ownership tracking.
    *
-   * @param {SeedOptions} options - Seed options
-   * @returns {Promise<SeedResult>} Seed result
+   * @param {SeedOptions} options - Seeding options
+   * @param {string} [options.appName] - App name for process ownership tracking
+   * @returns {Promise<SeedResult>} Seeding result
    */
   async seed(options = {}) {
-    if (!this.#initialized) {
-      throw new Error('SeedRunner not initialized');
-    }
+    this.#ensureInitialized();
 
     if (this.#isRunning) {
       throw new Error('Seed operation already running');
     }
 
-    const { knex, dryRun = false, directory, force = false } = options;
+    const { knex, dryRun = false, directory, force = false, appName } = options;
 
     if (!InputValidator.isValidKnexInstance(knex)) {
       throw new Error('Valid Knex instance is required');
@@ -298,8 +357,8 @@ export class SeedRunner extends EventEmitter {
       // Ensure knex_seeds table exists
       await this.#ensureTable(knex);
 
-      // Get already executed seeds
-      const executedSeeds = await this.#getExecutedSeeds(knex);
+      // Get already executed seeds (filtered by app if appName provided)
+      const executedSeeds = await this.#getExecutedSeeds(knex, appName);
 
       // Filter seeds
       let seedsToRun = validation.valid;
@@ -328,8 +387,8 @@ export class SeedRunner extends EventEmitter {
         };
       }
 
-      // Get next batch number
-      const batchNo = await this.#getNextBatch(knex);
+      // Get next batch number (app-specific if appName provided)
+      const batchNo = await this.#getNextBatch(knex, appName);
 
       // Execute seeds one by one and track them
       const executedSeedNames = [];
@@ -349,14 +408,14 @@ export class SeedRunner extends EventEmitter {
         } catch (error) {
           // If a seed fails, record what was successful and throw
           if (executedSeedNames.length > 0) {
-            await this.#recordSeedExecution(knex, executedSeedNames, batchNo);
+            await this.#recordSeedExecution(knex, executedSeedNames, batchNo, appName);
           }
           throw new Error(`Seed ${seedInfo.file} failed: ${error.message}`);
         }
       }
 
-      // Record all successful seed executions
-      await this.#recordSeedExecution(knex, executedSeedNames, batchNo);
+      // Record all successful seed executions with process ownership
+      await this.#recordSeedExecution(knex, executedSeedNames, batchNo, appName);
 
       return {
         success: true,
@@ -373,21 +432,20 @@ export class SeedRunner extends EventEmitter {
   }
 
   /**
-   * Rollback seeds for this connection.
+   * Rollback seeds for this connection with app-specific filtering.
    *
    * @param {SeedRollbackOptions} options - Rollback options
+   * @param {string} [options.appName] - App name to filter rollback by process ownership
    * @returns {Promise<SeedRollbackResult>} Rollback result
    */
   async rollback(options = {}) {
-    if (!this.#initialized) {
-      throw new Error('SeedRunner not initialized');
-    }
+    this.#ensureInitialized();
 
     if (this.#isRunning) {
       throw new Error('Operation already running');
     }
 
-    const { knex, dryRun = false, directory, force = false, steps = 1 } = options;
+    const { knex, dryRun = false, directory, force = false, steps = 1, appName } = options;
 
     if (!InputValidator.isValidKnexInstance(knex)) {
       throw new Error('Valid Knex instance is required');
@@ -430,8 +488,8 @@ export class SeedRunner extends EventEmitter {
       // Ensure knex_seeds table exists
       await this.#ensureTable(knex);
 
-      // Get seeds to rollback from tracking table
-      const seedsToRollback = await this.#getSeedsToRollback(knex, steps);
+      // Get seeds to rollback from tracking table (filtered by app if appName provided)
+      const seedsToRollback = await this.#getSeedsToRollback(knex, steps, appName);
 
       if (dryRun) {
         // For dry run, return what would be rolled back
@@ -498,8 +556,8 @@ export class SeedRunner extends EventEmitter {
         }
       }
 
-      // Remove rolled back seeds from tracking table
-      await this.#removeSeedRecords(knex, rolledBackSeeds);
+      // Remove rolled back seeds from tracking table (filtered by app if appName provided)
+      await this.#removeSeedRecords(knex, rolledBackSeeds, appName);
 
       return {
         success: true,

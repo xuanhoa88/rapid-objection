@@ -128,27 +128,43 @@ export class MigrationManager extends EventEmitter {
   }
 
   /**
-   * Get the migration runner's migrate method.
-   * Provides direct access to migration operations.
+   * Run migrations with process ownership tracking.
+   * Automatically includes the connection name as appName for process ownership.
    *
-   * @returns {Function} The migrate method bound to the runner
+   * @param {Object} options - Migration options
+   * @returns {Promise<Object>} Migration result
    * @throws {Error} If MigrationManager is not initialized
    */
-  get migrate() {
+  async migrate(options = {}) {
     this.#ensureInitialized();
-    return this.#runner.migrate.bind(this.#runner);
+    
+    // Include connection name as appName for process ownership tracking
+    const migrationOptions = {
+      ...options,
+      appName: options.appName || this.#connectionName
+    };
+    
+    return await this.#runner.migrate(migrationOptions);
   }
 
   /**
-   * Get the migration runner's rollback method.
-   * Provides direct access to rollback operations.
+   * Rollback migrations with app-specific filtering.
+   * Automatically includes the connection name as appName for process ownership filtering.
    *
-   * @returns {Function} The rollback method bound to the runner
+   * @param {Object} options - Rollback options
+   * @returns {Promise<Object>} Rollback result
    * @throws {Error} If MigrationManager is not initialized
    */
-  get rollback() {
+  async rollback(options = {}) {
     this.#ensureInitialized();
-    return this.#runner.rollback.bind(this.#runner);
+    
+    // Include connection name as appName for app-specific rollback filtering
+    const rollbackOptions = {
+      ...options,
+      appName: options.appName || this.#connectionName
+    };
+    
+    return await this.#runner.rollback(rollbackOptions);
   }
 
   /**

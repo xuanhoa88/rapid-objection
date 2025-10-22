@@ -76,7 +76,7 @@ export class SeedValidator extends EventEmitter {
 
     try {
       if (!this.#initialized) {
-        throw new Error('SeedValidator not initialized');
+        throw new Error('SeedValidator not initialized. Call initialize() first.');
       }
 
       if (!seedsPath) {

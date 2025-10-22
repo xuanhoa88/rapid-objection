@@ -73,7 +73,7 @@ export class MigrationValidator extends EventEmitter {
 
     try {
       if (!this.#initialized) {
-        throw new Error('MigrationValidator not initialized');
+        throw new Error('MigrationValidator not initialized. Call initialize() first.');
       }
 
       if (!migrationsPath) {

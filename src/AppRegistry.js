@@ -808,7 +808,10 @@ export class AppRegistry extends EventEmitter {
           timestamp: new Date(),
         });
 
-        const migrationResult = await connection.runMigrations(config.migrations);
+        const migrationResult = await connection.runMigrations({
+          ...config.migrations,
+          appName,
+        });
         autoOperations.migrations = true;
 
         this.emit('auto-migration-completed', {
@@ -825,7 +828,10 @@ export class AppRegistry extends EventEmitter {
           timestamp: new Date(),
         });
 
-        const seedResult = await connection.runSeeds(config.seeds);
+        const seedResult = await connection.runSeeds({
+          ...config.seeds,
+          appName,
+        });
         autoOperations.seeds = true;
 
         this.emit('auto-seed-completed', {
@@ -1130,61 +1136,7 @@ export class AppRegistry extends EventEmitter {
     await this.#notifyPlugins('onAppRollbackStarted', appName, connection, options);
 
     try {
-      // 1. Rollback seeds first (reverse order of execution)
-      try {
-        rollbackOperations.seeds.attempted = true;
-
-        // Check if connection has seed management capabilities
-        if (typeof connection?.rollbackSeeds === 'function') {
-          const seedResult = await connection.rollbackSeeds({
-            steps: 1, // Rollback last batch by default
-            force: forceCleanup,
-          });
-          rollbackOperations.seeds.success = true;
-
-          this.emit('app-seed-rollback-completed', {
-            appName,
-            result: seedResult,
-            timestamp: new Date(),
-          });
-        }
-      } catch (error) {
-        rollbackOperations.seeds.error = error.message;
-        this.#emitWarning(`Seed rollback failed for app '${appName}': ${error.message}`, {
-          phase: 'seed-rollback',
-          appName,
-          error: error.message,
-        });
-      }
-
-      // 2. Rollback migrations (after seeds)
-      try {
-        rollbackOperations.migrations.attempted = true;
-
-        // Check if connection has migration management capabilities
-        if (typeof connection?.rollbackMigrations === 'function') {
-          const migrationResult = await connection.rollbackMigrations({
-            step: 1, // Rollback one step by default
-            force: forceCleanup,
-          });
-          rollbackOperations.migrations.success = true;
-
-          this.emit('app-migration-rollback-completed', {
-            appName,
-            result: migrationResult,
-            timestamp: new Date(),
-          });
-        }
-      } catch (error) {
-        rollbackOperations.migrations.error = error.message;
-        this.#emitWarning(`Migration rollback failed for app '${appName}': ${error.message}`, {
-          phase: 'migration-rollback',
-          appName,
-          error: error.message,
-        });
-      }
-
-      // 3. Clear registered models (cleanup only, no rollback needed)
+      // 1. Clear registered models (cleanup only, no rollback needed)
       try {
         rollbackOperations.models.attempted = true;
 
@@ -1209,6 +1161,62 @@ export class AppRegistry extends EventEmitter {
         rollbackOperations.models.error = error.message;
         this.#emitWarning(`Model cleanup failed for app '${appName}': ${error.message}`, {
           phase: 'model-cleanup',
+          appName,
+          error: error.message,
+        });
+      }
+
+      // 2. Rollback seeds first (reverse order of execution)
+      try {
+        rollbackOperations.seeds.attempted = true;
+
+        // Check if connection has seed management capabilities
+        if (typeof connection?.rollbackSeeds === 'function') {
+          const seedResult = await connection.rollbackSeeds({
+            steps: 1, // Rollback last batch by default
+            force: forceCleanup,
+            appName,
+          });
+          rollbackOperations.seeds.success = true;
+
+          this.emit('app-seed-rollback-completed', {
+            appName,
+            result: seedResult,
+            timestamp: new Date(),
+          });
+        }
+      } catch (error) {
+        rollbackOperations.seeds.error = error.message;
+        this.#emitWarning(`Seed rollback failed for app '${appName}': ${error.message}`, {
+          phase: 'seed-rollback',
+          appName,
+          error: error.message,
+        });
+      }
+
+      // 3. Rollback migrations (after seeds)
+      try {
+        rollbackOperations.migrations.attempted = true;
+
+        // Check if connection has migration management capabilities
+        if (typeof connection?.rollbackMigrations === 'function') {
+          const migrationResult = await connection.rollbackMigrations({
+            step: 1, // Rollback one step by default
+            force: forceCleanup,
+            appName,
+          });
+          rollbackOperations.migrations.success = true;
+
+          this.emit('app-migration-rollback-completed', {
+            appName,
+            result: migrationResult,
+            timestamp: new Date(),
+          });
+        }
+      } catch (error) {
+        rollbackOperations.migrations.error = error.message;
+        this.#emitWarning(`Migration rollback failed for app '${appName}': ${error.message}`, {
+          phase: 'migration-rollback',
           appName,
           error: error.message,
         });

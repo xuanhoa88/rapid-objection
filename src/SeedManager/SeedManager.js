@@ -133,27 +133,43 @@ export class SeedManager extends EventEmitter {
   }
 
   /**
-   * Get the seed runner's seed method.
-   * Provides direct access to seed operations.
+   * Run seeds with process ownership tracking.
+   * Automatically includes the connection name as appName for process ownership.
    *
-   * @returns {Function} The seed method bound to the runner
+   * @param {Object} options - Seeding options
+   * @returns {Promise<Object>} Seeding result
    * @throws {Error} If SeedManager is not initialized
    */
-  get seed() {
+  async seed(options = {}) {
     this.#ensureInitialized();
-    return this.#runner.seed.bind(this.#runner);
+    
+    // Include connection name as appName for process ownership tracking
+    const seedOptions = {
+      ...options,
+      appName: options.appName || this.#connectionName
+    };
+    
+    return await this.#runner.seed(seedOptions);
   }
 
   /**
-   * Get the seed runner's rollback method.
-   * Provides direct access to rollback operations.
+   * Rollback seeds with app-specific filtering.
+   * Automatically includes the connection name as appName for process ownership filtering.
    *
-   * @returns {Function} The rollback method bound to the runner
+   * @param {Object} options - Rollback options
+   * @returns {Promise<Object>} Rollback result
    * @throws {Error} If SeedManager is not initialized
    */
-  get rollback() {
+  async rollback(options = {}) {
     this.#ensureInitialized();
-    return this.#runner.rollback.bind(this.#runner);
+    
+    // Include connection name as appName for app-specific rollback filtering
+    const rollbackOptions = {
+      ...options,
+      appName: options.appName || this.#connectionName
+    };
+    
+    return await this.#runner.rollback(rollbackOptions);
   }
 
   /**
