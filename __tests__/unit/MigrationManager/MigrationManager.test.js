@@ -293,7 +293,7 @@ describe('MigrationManager', () => {
             { name: 'app1_data_2', value: 'from_app1' }
           ]);
         };
-        
+
         exports.down = async function(knex) {
           await knex('test_table').where('value', 'from_app1').del();
         };
@@ -311,7 +311,7 @@ describe('MigrationManager', () => {
             { name: 'app2_data_2', value: 'from_app2' }
           ]);
         };
-        
+
         exports.down = async function(knex) {
           await knex('test_table').where('value', 'from_app2').del();
         };
@@ -328,7 +328,7 @@ describe('MigrationManager', () => {
             { name: 'shared_data', value: 'from_shared' }
           ]);
         };
-        
+
         exports.down = async function(knex) {
           await knex('test_table').where('value', 'from_shared').del();
         };
@@ -345,15 +345,21 @@ describe('MigrationManager', () => {
       sharedKnex = await dbHelper.createKnexInstance('shared_migration_ownership_test');
 
       // Create two migration managers representing different apps sharing same connection
-      migrationManager1 = new MigrationManager({
-        tableName: 'knex_migrations',
-        directory: tempMigrationDir
-      }, 'app1');
+      migrationManager1 = new MigrationManager(
+        {
+          tableName: 'knex_migrations',
+          directory: tempMigrationDir,
+        },
+        'app1'
+      );
 
-      migrationManager2 = new MigrationManager({
-        tableName: 'knex_migrations',
-        directory: tempMigrationDir
-      }, 'app2');
+      migrationManager2 = new MigrationManager(
+        {
+          tableName: 'knex_migrations',
+          directory: tempMigrationDir,
+        },
+        'app2'
+      );
 
       await migrationManager1.initialize();
       await migrationManager2.initialize();
@@ -383,7 +389,7 @@ describe('MigrationManager', () => {
       const result = await migrationManager1.migrate({
         knex: sharedKnex,
         directory: tempMigrationDir,
-        force: true
+        force: true,
       });
 
       expect(result.success).toBe(true);
@@ -407,14 +413,14 @@ describe('MigrationManager', () => {
       await migrationManager1.migrate({
         knex: sharedKnex,
         directory: tempMigrationDir,
-        force: true
+        force: true,
       });
 
       // App2 runs migrations on same connection
       await migrationManager2.migrate({
         knex: sharedKnex,
         directory: tempMigrationDir,
-        force: true
+        force: true,
       });
 
       // Check that migrations are tracked with correct app ownership
@@ -423,14 +429,14 @@ describe('MigrationManager', () => {
         .orderBy('id');
 
       expect(migrationRecords).toHaveLength(6); // 3 migrations × 2 apps = 6 records
-      
+
       // App1 migrations
       const app1Migrations = migrationRecords.filter(r => r.app_name === 'app1');
       expect(app1Migrations).toHaveLength(3);
       expect(app1Migrations.map(m => m.name)).toEqual([
         '001_app1_migration.js',
-        '002_app2_migration.js', 
-        '003_shared_migration.js'
+        '002_app2_migration.js',
+        '003_shared_migration.js',
       ]);
 
       // App2 migrations
@@ -439,7 +445,7 @@ describe('MigrationManager', () => {
       expect(app2Migrations.map(m => m.name)).toEqual([
         '001_app1_migration.js',
         '002_app2_migration.js',
-        '003_shared_migration.js'
+        '003_shared_migration.js',
       ]);
     });
 
@@ -448,13 +454,13 @@ describe('MigrationManager', () => {
       await migrationManager1.migrate({
         knex: sharedKnex,
         directory: tempMigrationDir,
-        force: true
+        force: true,
       });
 
       await migrationManager2.migrate({
         knex: sharedKnex,
         directory: tempMigrationDir,
-        force: true
+        force: true,
       });
 
       // Verify initial data
@@ -465,7 +471,7 @@ describe('MigrationManager', () => {
       const rollbackResult = await migrationManager1.rollback({
         knex: sharedKnex,
         directory: tempMigrationDir,
-        step: 1
+        step: 1,
       });
 
       expect(rollbackResult.success).toBe(true);
@@ -484,7 +490,7 @@ describe('MigrationManager', () => {
       // Note: The rollback removes app1 data but the table structure and app2 data remain
       // The exact count depends on the down function implementation
       expect(remainingData.length).toBeGreaterThanOrEqual(0); // Data may be fully or partially rolled back
-      
+
       // Verify that app2 migrations are still tracked
       expect(remainingMigrations.every(m => m.app_name === 'app2')).toBe(true);
     });
@@ -494,20 +500,20 @@ describe('MigrationManager', () => {
       await migrationManager1.migrate({
         knex: sharedKnex,
         directory: tempMigrationDir,
-        force: true
+        force: true,
       });
 
       await migrationManager1.migrate({
         knex: sharedKnex,
         directory: tempMigrationDir,
-        force: true // Force re-run to create new batch
+        force: true, // Force re-run to create new batch
       });
 
       // App2 runs migrations once
       await migrationManager2.migrate({
         knex: sharedKnex,
         directory: tempMigrationDir,
-        force: true
+        force: true,
       });
 
       // Check batch numbers
@@ -533,28 +539,28 @@ describe('MigrationManager', () => {
       await migrationManager1.migrate({
         knex: sharedKnex,
         directory: tempMigrationDir,
-        force: true
+        force: true,
       });
 
       // App2 runs migrations
       await migrationManager2.migrate({
         knex: sharedKnex,
         directory: tempMigrationDir,
-        force: true
+        force: true,
       });
 
       // App1 runs more migrations (second batch)
       await migrationManager1.migrate({
         knex: sharedKnex,
         directory: tempMigrationDir,
-        force: true
+        force: true,
       });
 
       // App1 rollback should only affect app1's latest batch
       await migrationManager1.rollback({
         knex: sharedKnex,
         directory: tempMigrationDir,
-        step: 1
+        step: 1,
       });
 
       // Check remaining migrations
@@ -568,11 +574,11 @@ describe('MigrationManager', () => {
 
       // App1 should have fewer migrations after rollback (latest batch removed)
       expect(app1Migrations.length).toBeLessThan(6); // Some app1 migrations rolled back
-      
+
       // App2 should be unaffected
       expect(app2Migrations).toHaveLength(3); // Unaffected
       expect(app2Migrations.every(m => m.batch === 1)).toBe(true);
-      
+
       // Total remaining should be less than the original 9 (6 app1 + 3 app2)
       expect(remainingMigrations.length).toBeLessThan(9);
     });
@@ -591,14 +597,14 @@ describe('MigrationManager', () => {
       // Insert some legacy migration records
       await sharedKnex('knex_migrations').insert([
         { name: 'legacy_migration_1.js', batch: 1 },
-        { name: 'legacy_migration_2.js', batch: 1 }
+        { name: 'legacy_migration_2.js', batch: 1 },
       ]);
 
       // Run migrations with new manager - should add app_name column
       await migrationManager1.migrate({
         knex: sharedKnex,
         directory: tempMigrationDir,
-        force: true
+        force: true,
       });
 
       // Check that app_name column was added and populated
@@ -623,11 +629,14 @@ describe('MigrationManager', () => {
     test('should use connection name as app name when called through ConnectionManager', async () => {
       // This test simulates how AppRegistry calls migration operations
       const connectionName = 'test-connection';
-      
-      const migrationManager = new MigrationManager({
-        tableName: 'knex_migrations',
-        directory: tempMigrationDir
-      }, connectionName);
+
+      const migrationManager = new MigrationManager(
+        {
+          tableName: 'knex_migrations',
+          directory: tempMigrationDir,
+        },
+        connectionName
+      );
 
       await migrationManager.initialize();
 
@@ -635,7 +644,7 @@ describe('MigrationManager', () => {
       await migrationManager.migrate({
         knex: sharedKnex,
         directory: tempMigrationDir,
-        force: true
+        force: true,
       });
 
       // Check that migrations are tracked with connection name as app_name

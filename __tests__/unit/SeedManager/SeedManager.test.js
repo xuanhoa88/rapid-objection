@@ -265,15 +265,21 @@ describe('SeedManager', () => {
       sharedKnex = await dbHelper.createKnexInstance('shared_seed_ownership_test');
 
       // Create two seed managers representing different apps sharing same connection
-      seedManager1 = new SeedManager({
-        tableName: 'knex_seeds',
-        directory: tempSeedDir
-      }, 'app1');
+      seedManager1 = new SeedManager(
+        {
+          tableName: 'knex_seeds',
+          directory: tempSeedDir,
+        },
+        'app1'
+      );
 
-      seedManager2 = new SeedManager({
-        tableName: 'knex_seeds',
-        directory: tempSeedDir
-      }, 'app2');
+      seedManager2 = new SeedManager(
+        {
+          tableName: 'knex_seeds',
+          directory: tempSeedDir,
+        },
+        'app2'
+      );
 
       await seedManager1.initialize();
       await seedManager2.initialize();
@@ -303,7 +309,7 @@ describe('SeedManager', () => {
       const result = await seedManager1.seed({
         knex: sharedKnex,
         directory: tempSeedDir,
-        force: true
+        force: true,
       });
 
       expect(result.success).toBe(true);
@@ -327,14 +333,14 @@ describe('SeedManager', () => {
       await seedManager1.seed({
         knex: sharedKnex,
         directory: tempSeedDir,
-        force: true
+        force: true,
       });
 
       // App2 runs seeds on same connection
       await seedManager2.seed({
         knex: sharedKnex,
         directory: tempSeedDir,
-        force: true
+        force: true,
       });
 
       // Check that seeds are tracked with correct app ownership
@@ -343,14 +349,14 @@ describe('SeedManager', () => {
         .orderBy('id');
 
       expect(seedRecords).toHaveLength(6); // 3 seeds × 2 apps = 6 records
-      
+
       // App1 seeds
       const app1Seeds = seedRecords.filter(r => r.app_name === 'app1');
       expect(app1Seeds).toHaveLength(3);
       expect(app1Seeds.map(s => s.name)).toEqual([
         '001_app1_seed.js',
-        '002_app2_seed.js', 
-        '003_shared_seed.js'
+        '002_app2_seed.js',
+        '003_shared_seed.js',
       ]);
 
       // App2 seeds
@@ -359,7 +365,7 @@ describe('SeedManager', () => {
       expect(app2Seeds.map(s => s.name)).toEqual([
         '001_app1_seed.js',
         '002_app2_seed.js',
-        '003_shared_seed.js'
+        '003_shared_seed.js',
       ]);
     });
 
@@ -368,13 +374,13 @@ describe('SeedManager', () => {
       await seedManager1.seed({
         knex: sharedKnex,
         directory: tempSeedDir,
-        force: true
+        force: true,
       });
 
       await seedManager2.seed({
         knex: sharedKnex,
         directory: tempSeedDir,
-        force: true
+        force: true,
       });
 
       // Verify initial data
@@ -385,7 +391,7 @@ describe('SeedManager', () => {
       const rollbackResult = await seedManager1.rollback({
         knex: sharedKnex,
         directory: tempSeedDir,
-        steps: 1
+        steps: 1,
       });
 
       expect(rollbackResult.success).toBe(true);
@@ -409,20 +415,20 @@ describe('SeedManager', () => {
       await seedManager1.seed({
         knex: sharedKnex,
         directory: tempSeedDir,
-        force: true
+        force: true,
       });
 
       await seedManager1.seed({
         knex: sharedKnex,
         directory: tempSeedDir,
-        force: true // Force re-run to create new batch
+        force: true, // Force re-run to create new batch
       });
 
       // App2 runs seeds once
       await seedManager2.seed({
         knex: sharedKnex,
         directory: tempSeedDir,
-        force: true
+        force: true,
       });
 
       // Check batch numbers
@@ -448,28 +454,28 @@ describe('SeedManager', () => {
       await seedManager1.seed({
         knex: sharedKnex,
         directory: tempSeedDir,
-        force: true
+        force: true,
       });
 
       // App2 runs seeds
       await seedManager2.seed({
         knex: sharedKnex,
         directory: tempSeedDir,
-        force: true
+        force: true,
       });
 
       // App1 runs more seeds (second batch)
       await seedManager1.seed({
         knex: sharedKnex,
         directory: tempSeedDir,
-        force: true
+        force: true,
       });
 
       // App1 rollback should only affect app1's latest batch
       await seedManager1.rollback({
         knex: sharedKnex,
         directory: tempSeedDir,
-        steps: 1
+        steps: 1,
       });
 
       // Check remaining seeds
@@ -483,7 +489,7 @@ describe('SeedManager', () => {
       // However, if rollback removes all app1 seeds from latest batch, we get:
       // app1 batch 1 (3 seeds) + app2 batch 1 (3 seeds) = 6 seeds
       // But the actual result shows only app2 seeds remain, so rollback removed all app1 seeds
-      
+
       const app1Seeds = remainingSeeds.filter(r => r.app_name === 'app1');
       const app2Seeds = remainingSeeds.filter(r => r.app_name === 'app2');
 
@@ -492,7 +498,7 @@ describe('SeedManager', () => {
       // for the latest batch only
       expect(app2Seeds).toHaveLength(3); // App2 unaffected
       expect(app2Seeds.every(s => s.batch === 1)).toBe(true);
-      
+
       // Check total remaining seeds - should be app1 batch 1 + app2 batch 1
       // If only app2 remains, then app1's batch 2 was correctly rolled back
       // and batch 1 might have been rolled back too (depending on steps parameter)
@@ -514,23 +520,21 @@ describe('SeedManager', () => {
       // Insert some legacy seed records
       await sharedKnex('knex_seeds').insert([
         { name: 'legacy_seed_1.js', batch: 1 },
-        { name: 'legacy_seed_2.js', batch: 1 }
+        { name: 'legacy_seed_2.js', batch: 1 },
       ]);
 
       // Run seeds with new manager - should add app_name column
       await seedManager1.seed({
         knex: sharedKnex,
         directory: tempSeedDir,
-        force: true
+        force: true,
       });
 
       // Check that app_name column was added and populated
       const hasAppNameColumn = await sharedKnex.schema.hasColumn('knex_seeds', 'app_name');
       expect(hasAppNameColumn).toBe(true);
 
-      const allSeeds = await sharedKnex('knex_seeds')
-        .select('name', 'app_name')
-        .orderBy('id');
+      const allSeeds = await sharedKnex('knex_seeds').select('name', 'app_name').orderBy('id');
 
       // Legacy seeds should have default app_name
       const legacySeeds = allSeeds.filter(s => s.name.startsWith('legacy_'));
@@ -546,11 +550,14 @@ describe('SeedManager', () => {
     test('should use connection name as app name when called through ConnectionManager', async () => {
       // This test simulates how AppRegistry calls seed operations
       const connectionName = 'test-connection';
-      
-      const seedManager = new SeedManager({
-        tableName: 'knex_seeds',
-        directory: tempSeedDir
-      }, connectionName);
+
+      const seedManager = new SeedManager(
+        {
+          tableName: 'knex_seeds',
+          directory: tempSeedDir,
+        },
+        connectionName
+      );
 
       await seedManager.initialize();
 
@@ -558,13 +565,11 @@ describe('SeedManager', () => {
       await seedManager.seed({
         knex: sharedKnex,
         directory: tempSeedDir,
-        force: true
+        force: true,
       });
 
       // Check that seeds are tracked with connection name as app_name
-      const seedRecords = await sharedKnex('knex_seeds')
-        .select('name', 'app_name')
-        .orderBy('id');
+      const seedRecords = await sharedKnex('knex_seeds').select('name', 'app_name').orderBy('id');
 
       expect(seedRecords).toHaveLength(3);
       expect(seedRecords.every(s => s.app_name === connectionName)).toBe(true);

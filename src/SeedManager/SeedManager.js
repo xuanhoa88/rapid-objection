@@ -142,13 +142,13 @@ export class SeedManager extends EventEmitter {
    */
   async seed(options = {}) {
     this.#ensureInitialized();
-    
+
     // Include connection name as appName for process ownership tracking
     const seedOptions = {
       ...options,
-      appName: options.appName || this.#connectionName
+      appName: options.appName || this.#connectionName,
     };
-    
+
     return await this.#runner.seed(seedOptions);
   }
 
@@ -162,13 +162,13 @@ export class SeedManager extends EventEmitter {
    */
   async rollback(options = {}) {
     this.#ensureInitialized();
-    
+
     // Include connection name as appName for app-specific rollback filtering
     const rollbackOptions = {
       ...options,
-      appName: options.appName || this.#connectionName
+      appName: options.appName || this.#connectionName,
     };
-    
+
     return await this.#runner.rollback(rollbackOptions);
   }
 

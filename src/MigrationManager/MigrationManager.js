@@ -137,13 +137,13 @@ export class MigrationManager extends EventEmitter {
    */
   async migrate(options = {}) {
     this.#ensureInitialized();
-    
+
     // Include connection name as appName for process ownership tracking
     const migrationOptions = {
       ...options,
-      appName: options.appName || this.#connectionName
+      appName: options.appName || this.#connectionName,
     };
-    
+
     return await this.#runner.migrate(migrationOptions);
   }
 
@@ -157,13 +157,13 @@ export class MigrationManager extends EventEmitter {
    */
   async rollback(options = {}) {
     this.#ensureInitialized();
-    
+
     // Include connection name as appName for app-specific rollback filtering
     const rollbackOptions = {
       ...options,
-      appName: options.appName || this.#connectionName
+      appName: options.appName || this.#connectionName,
     };
-    
+
     return await this.#runner.rollback(rollbackOptions);
   }
 
