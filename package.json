@@ -46,7 +46,7 @@
     "clean": "rimraf dist coverage reports",
     "docs": "jsdoc -c jsdoc.config.json",
     "prepare": "husky install",
-    "prepack": "npm run clean && npm run quality && npm run build"
+    "prepack": "npm run clean && npm run test:ci && npm run quality"
   },
   "dependencies": {
     "knex": "3.1.0",

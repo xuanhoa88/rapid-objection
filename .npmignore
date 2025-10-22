@@ -1,3 +1,5 @@
+# Generated based on .gitignore to control published package contents
+
 # Dependencies
 node_modules/
 npm-debug.log*
@@ -11,8 +13,7 @@ coverage/
 .nyc_output/
 *.lcov
 
-# Build outputs
-dist/
+# Build outputs (keep dist/ for published artifacts)
 build/
 lib/
 
@@ -105,6 +106,21 @@ performance-results/
 secrets/
 keys/
 certificates/
+
+# Development and CI files (shouldn't be published)
+.github/
+.husky/
+.vscode/
+*.config.js
+*.config.json
+tsconfig.json
+jsdoc.config.json
+.eslintrc*
+.prettierrc*
+jest.config.js
+lint-staged.config.js
+
+# Additional security patterns
 *.pem
 *.key
 *.crt
